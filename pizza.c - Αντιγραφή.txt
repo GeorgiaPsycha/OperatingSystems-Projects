@@ -1,0 +1,232 @@
+#include "pizza.h"
+#include <stdio.h>
+#include <pthread.h>
+#include <unistd.h>
+
+
+
+//mutexes init 
+	pthread_mutex_t mutex_tel = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_cooks = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_ovens = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_deliverers = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_pack=PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_screen=PTHREAD_MUTEX_INITIALIZER;
+	
+	
+// conditions init
+	pthread_cond_t cond_tel = PTHREAD_COND_INITIALIZER;
+	pthread_cond_t cond_cooks = PTHREAD_COND_INITIALIZER;
+	pthread_cond_t cond_ovens = PTHREAD_COND_INITIALIZER;
+	pthread_cond_t cond_deliverers = PTHREAD_COND_INITIALIZER;
+	pthread_cond_t cond_pack = PTHREAD_COND_INITIALIZER;
+	
+
+int N_cust;
+
+int total_money ; // ta esoda ths pizzarias
+
+int N_tel = Ntel; //  telephonites
+int N_cook = Ncook; //  cooks
+int N_oven = Noven; // ovens
+int N_deliver = Ndeliverer; //deliverers
+int N_pack= Npack; // pack guy
+int success_order;
+int fail_order;
+int prep_min=0;
+unsigned int seed;
+
+
+
+void *order(void *x){
+
+    int oid = *(int *)x;
+    int rc;
+    
+    
+    printf("Hello order: %d\n",oid);
+    rc = pthread_mutex_lock(&mutex_tel);
+      
+    while(N_tel==0){
+           
+           rc = pthread_cond_wait(&cond_tel, &mutex_tel);   
+    }
+   
+    N_tel--; 
+   
+   
+    int pizzas = rand_r(&seed) % N_orderhigh + N_orderlow;
+    
+   
+    int pay_time= rand_r(&seed) % T_paymenthigh + T_paymentlow;
+    rc = pthread_mutex_unlock(&mutex_tel);
+   
+    
+	 
+	
+	 
+     rc = pthread_mutex_lock(&mutex_tel);	
+     rc = pthread_mutex_lock(&mutex_screen);  
+     printf ("Customer %d your order is starting prepared now \n",oid); // print the wanted message
+	 rc = pthread_mutex_unlock(&mutex_screen);
+	 success_order++; 
+     
+     N_tel++;
+    
+    
+    total_money= total_money + C_pizza;
+    rc = pthread_mutex_unlock(&mutex_tel);
+    
+    
+    
+    rc = pthread_mutex_lock(&mutex_cooks);
+    while(N_cook==0){
+           rc = pthread_cond_wait(&cond_cooks, &mutex_cooks);   
+    }
+    
+    N_cook--;
+    rc = pthread_mutex_unlock(&mutex_cooks); 
+    sleep(T_prep);
+    rc = pthread_mutex_lock(&mutex_cooks);
+    
+   
+    rc = pthread_mutex_lock(&mutex_ovens);
+    while(N_oven<pizzas){
+           rc = pthread_cond_wait(&cond_ovens, &mutex_ovens);   
+    }
+   
+     N_cook++; 
+     rc = pthread_mutex_unlock(&mutex_cooks);
+     rc = pthread_cond_signal(&cond_cooks); 
+   
+    
+     N_oven= N_oven-pizzas;
+     
+     rc = pthread_mutex_unlock(&mutex_ovens);
+   
+      
+    
+    clock_gettime(CLOCK_REALTIME, &time_baked);
+   
+    rc = pthread_mutex_lock(&mutex_ovens);
+    N_oven=N_oven+pizzas;//free the ovens
+    rc = pthread_mutex_unlock(&mutex_ovens);
+
+   
+    
+    sleep(T_prep);
+    
+    
+    rc = pthread_mutex_lock(&mutex_pack);
+     while(N_pack==0){
+          
+           rc = pthread_cond_wait(&cond_pack, &mutex_pack);   
+    }
+    
+    N_pack--;
+    rc = pthread_mutex_unlock(&mutex_pack);
+    sleep(T_pack*pizzas);
+    
+    rc = pthread_mutex_lock(&mutex_pack);
+
+    prep_min = prep_stop.tv_sec- order_start.tv_sec;
+    
+    rc = pthread_mutex_lock(&mutex_screen);
+    printf(" Order with id %d packed sussefully in %d minutes \n\n",oid,prep_min);  
+    rc = pthread_mutex_unlock(&mutex_screen);
+    
+    N_pack++; 
+    rc = pthread_mutex_unlock(&mutex_pack);
+    rc = pthread_cond_signal(&cond_pack); 
+    rc = pthread_mutex_lock(&mutex_deliverers);
+     while(N_deliver==0){
+           rc = pthread_cond_wait(&cond_deliverers, &mutex_deliverers);   
+    }
+    
+    N_deliver--; 
+    rc = pthread_mutex_unlock(&mutex_deliverers);
+    int del_time= rand_r(&seed) % T_delhigh + T_dellow;
+    sleep(del_time); 
+    clock_gettime(CLOCK_REALTIME, &order_stop);
+    rc = pthread_mutex_lock(&mutex_screen);
+    printf("Order %d delivred sussefully in %d minutes \n\n",oid,d_time); 
+    rc = pthread_mutex_unlock(&mutex_screen);
+    sleep(del_time);
+    rc = pthread_mutex_lock(&mutex_deliverers);
+    N_deliver++;
+    rc = pthread_mutex_unlock(&mutex_deliverers);
+    rc = pthread_cond_signal(&cond_deliverers);
+    pthread_exit(NULL);
+
+  
+}
+
+int main(int argc, char *argv[]) {
+
+	// check the number of arguments
+	if (argc != 3) {
+		printf("Please enter only two arguments.\n\n");
+		exit(-1);
+	}
+
+	// save the parametres
+	N_cust = atoi(argv[1]);
+	seed = atoi(argv[2]);
+
+	// check for the right arguments
+	if(N_cust <0) {
+        printf("Customer Negative number.\n\n");
+        exit(-1);
+        }
+        
+	// create the id for every customer
+	int customer_id[N_cust];
+	for (int i = 0; i < N_cust; i++) {
+		customer_id[i] = i + 1;
+        }
+	
+	int rc;
+	pthread_t threads[N_cust];
+	
+	
+         pthread_t *thread;
+         thread = malloc(N_cust*sizeof(pthread_t));
+         if(thread==NULL){
+            printf("Error in memory.\n\n");
+            exit(-1);
+         }
+
+	for (int i = 0; i < N_cust; i++)
+        {
+		
+		if (i==0){
+		printf("Main:Δημιουργία νηματος για πελατη  %d\n\n", i+1);
+		rc = pthread_create(&threads[i], NULL, &order, &customer_id[i]);
+		
+		}else{
+		printf("Main:Δημιουργία νηματος για πελατη  %d\n\n", i+1);
+		int next_order = rand_r(&seed)%T_orderhigh+T_orderlow;
+		sleep(next_order);
+		rc = pthread_create(&threads[i], NULL, &order, &customer_id[i]);
+
+		}
+	}
+	
+
+	// destroy cond, mutex
+	pthread_mutex_destroy(&mutex_tel);
+    pthread_cond_destroy(&cond_tel);
+    pthread_mutex_destroy(&mutex_cooks);
+    pthread_cond_destroy(&cond_cooks);
+    pthread_mutex_destroy(&mutex_ovens);
+    pthread_cond_destroy(&cond_ovens);
+    pthread_mutex_destroy(&mutex_deliverers);
+    pthread_cond_destroy(&cond_deliverers);
+    pthread_mutex_destroy(&mutex_pack);
+    pthread_cond_destroy(&cond_pack);
+    pthread_mutex_destroy(&mutex_screen);
+   
+
+    return 0;
+}
+

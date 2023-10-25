@@ -1,0 +1,385 @@
+#include "pizza.h"
+#include <stdio.h>
+#include <pthread.h>
+#include <unistd.h>
+
+//pthread_mutex_t lock;
+//pthread_cond_t cond;
+
+//mutexes
+	pthread_mutex_t mutex_tel = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_cooks = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_ovens = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_deliverers = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_pack=PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t mutex_screen=PTHREAD_MUTEX_INITIALIZER;
+	
+	
+// conditions
+	pthread_cond_t cond_tel = PTHREAD_COND_INITIALIZER;
+	pthread_cond_t cond_cooks = PTHREAD_COND_INITIALIZER;
+	pthread_cond_t cond_ovens = PTHREAD_COND_INITIALIZER;
+	pthread_cond_t cond_deliverers = PTHREAD_COND_INITIALIZER;
+	pthread_cond_t cond_pack = PTHREAD_COND_INITIALIZER;
+	
+
+unsigned int sleep(unsigned int seconds);
+
+
+int N_cust;
+
+//Declaration of variables
+
+int total_money ; // ta esoda ths pizzarias
+
+ int N_tel = Ntel; //  telephonites
+ int N_cook = Ncook; //  cooks
+ int N_oven = Noven; // ovens
+ int N_deliver = Ndeliverer; //deliverers
+ int N_pack= Npack; // pack guy
+ 
+int success_order;
+int fail_order;
+double wait_time=0;
+double max_wait_time=0;
+double total_wait_time=0;
+double customer_service_time=0;
+double total_customer_service_time =0;
+double max_customer_service_time =0 ;
+double cold_time=0;
+double total_cold_time=0;
+double max_cold_time=0;
+double avg_wait =0 ;
+double avg_cold=0;
+double avg_service=0;
+unsigned long int  d_time=0;
+double prep_min=0;
+unsigned int seed;
+struct timespec order_start; // the customer just called
+
+
+void *order(void *x){
+
+    int oid = *(int *)x;
+    int rc;
+    seed= seed+oid; // every order has a unique seed
+    
+    printf("Hello order: %d\n",oid);
+    
+    // structs for time
+    struct timespec order_start; // the customer just called
+
+    struct timespec time_prep; // when the order started being prepared
+    struct timespec prep_stop; // when the order stoped being prepared
+    struct timespec customer_wait; // when the customer wait to connect with a phone
+    
+    struct timespec order_stop; // when the order is delivered
+    struct timespec time_baked; // when the pizza is baked
+    
+   
+    //get the time the customer just showed up
+    clock_gettime(CLOCK_REALTIME, &order_start);
+    printf("ORDER START %f \n",order_start.tv_sec);
+    
+    rc = pthread_mutex_lock(&mutex_tel);
+    // check for available tel
+    while(N_tel==0){
+           printf(" No available telephones ... please wait \n");
+           rc = pthread_cond_wait(&cond_tel, &mutex_tel);   
+    }
+    printf("Telephone was found for order %d.\n", oid);
+    N_tel--; // occupies the Telephone
+    
+    //get the time the customer just find the telephone to speak
+    clock_gettime(CLOCK_REALTIME, &customer_wait);
+    
+    // how many pizzas need to be prepared
+    int pizzas = rand_r(&seed) % N_orderhigh + N_orderlow;
+    //wait time for payment
+    int pay_time= rand_r(&seed) % T_paymenthigh + T_paymentlow;
+    rc = pthread_mutex_unlock(&mutex_tel);
+    sleep(pay_time);
+    printf ("SLEEP WIAT %d\n\n",pay_time);
+    printf ("Please give your cart in order to charge your %d pizzas\n\n",pizzas);
+   
+    // find the max wait time
+    wait_time= customer_wait.tv_sec-order_start.tv_sec;
+    wait_time/=60;
+    printf("ORDER WAIT %f \n",customer_wait.tv_sec);
+    total_wait_time = total_wait_time + wait_time;
+    if (wait_time> max_wait_time){
+       max_wait_time= wait_time;
+          
+    }
+   
+    
+    //Start paying
+  	
+	if(rand_r(&seed) %100 <5)
+	{//Print user didn't pay
+	// card declined
+	  rc = pthread_mutex_lock(&mutex_tel);
+	  rc = pthread_mutex_lock(&mutex_screen);
+	  printf ("I am sorry customer %d your card got declined \n",oid);
+	  printf ("The order with id  %d failed \n",oid);
+	  fail_order++;
+	  N_tel++;// free the telephoner
+	  rc = pthread_cond_signal(&cond_tel);
+      rc = pthread_mutex_unlock(&mutex_tel);
+      rc = pthread_mutex_unlock(&mutex_screen);
+      pthread_exit(NULL);  
+	  
+	}
+	 
+	 // payment was successfull
+     rc = pthread_mutex_lock(&mutex_tel);	
+     rc = pthread_mutex_lock(&mutex_screen);  
+     printf ("The order with id  %d was succesfull \n ",oid);
+	 printf ("Customer %d your order is starting prepared now \n",oid);
+	 rc = pthread_mutex_unlock(&mutex_screen);
+	 success_order++;
+    
+     
+     N_tel++;// free the telephoner
+    
+    // raise the earn money    
+    total_money= total_money + C_pizza*pizzas;
+    // free ton poro
+    rc = pthread_cond_signal(&cond_tel);
+    rc = pthread_mutex_unlock(&mutex_tel);
+    
+    
+    // time to find our cooks
+    rc = pthread_mutex_lock(&mutex_cooks);
+    while(N_cook==0){
+           printf(" No available cooks ... please wait \n");
+           rc = pthread_cond_wait(&cond_cooks, &mutex_cooks);   
+    }
+    printf("Cook was found for order %d.\n", oid);
+    N_cook--; // occupies the cook
+    rc = pthread_mutex_unlock(&mutex_cooks);
+    
+    //get the time the order was started to be prepared
+    clock_gettime(CLOCK_REALTIME, &time_prep);
+    
+    //wait time for preparation of pizzas
+    sleep(T_prep*pizzas);
+    rc = pthread_mutex_lock(&mutex_cooks);
+    printf ("Your %d pizzas are ready to be baked\n",pizzas);
+    
+    // its time for bake 
+    // lets find a oven  
+    rc = pthread_mutex_lock(&mutex_ovens);
+    while(N_oven<pizzas){
+           printf(" No available ovens ... please wait \n");
+           rc = pthread_cond_wait(&cond_ovens, &mutex_ovens);   
+    }
+    
+     // free the cooks
+     N_cook++;
+     rc = pthread_mutex_unlock(&mutex_cooks);
+     rc = pthread_cond_signal(&cond_cooks); // free ton poro cooks
+   
+     // start the bake
+     printf (" We have enough ovens and we will start bake your pizzas\n");
+     N_oven= N_oven-pizzas;// ocupied the ovens
+     
+     
+     rc = pthread_mutex_unlock(&mutex_ovens);
+   
+     // all the  pizzas bake at the same time
+    sleep( T_bake);
+      
+    
+    //get the time the order is out of ovens
+    clock_gettime(CLOCK_REALTIME, &time_baked);
+   
+     //free the ovens
+    rc = pthread_mutex_lock(&mutex_ovens);
+    N_oven=N_oven+pizzas;
+    rc = pthread_mutex_unlock(&mutex_ovens);
+    for (int i =0 ; i <=pizzas ; i++){
+        rc = pthread_cond_signal(&cond_ovens);
+    }
+   
+    //wait time for preparation of pizzas
+    
+    sleep(T_prep*pizzas);
+    printf ("Your %d pizzas are ready to be packed\n\n",pizzas);
+    
+    
+    //pack time
+    rc = pthread_mutex_lock(&mutex_pack);
+     while(N_pack==0){
+           printf(" No available pack quy ... please wait \n\n");
+           rc = pthread_cond_wait(&cond_pack, &mutex_pack);   
+    }
+    // ocupies the one and only pack quy
+    N_pack--;
+    rc = pthread_mutex_unlock(&mutex_pack);
+    sleep(T_pack*pizzas);
+    printf ("SLEEP PACK %d\n\n",T_pack*pizzas);
+    
+    //get the time the order is ready to be delivered 
+    clock_gettime(CLOCK_REALTIME, &prep_stop);
+    
+    rc = pthread_mutex_lock(&mutex_pack);
+   
+    prep_min = prep_stop.tv_sec- order_start.tv_sec;
+    prep_min = prep_min/60;
+    rc = pthread_mutex_lock(&mutex_screen);
+    printf(" Order with id %d packed sussefully in %2.2f minutes \n\n",oid,prep_min);  
+    rc = pthread_mutex_unlock(&mutex_screen);
+    
+    N_pack++;
+    rc = pthread_mutex_unlock(&mutex_pack);
+    rc = pthread_cond_signal(&cond_pack);
+    
+    // deliver time 
+    
+    rc = pthread_mutex_lock(&mutex_deliverers);
+     while(N_deliver==0){
+           printf(" No available delivery quy ... please wait \n");
+           rc = pthread_cond_wait(&cond_deliverers, &mutex_deliverers);   
+    }
+    
+    N_deliver--;
+    rc = pthread_mutex_unlock(&mutex_deliverers);
+    int del_time= rand_r(&seed) % T_delhigh + T_dellow;
+    
+    // the time the delivery need to be in the adrress
+    sleep(del_time);
+    printf ("SLEEP DEL %d\n\n",del_time);
+    
+    //get the time the order just delivered 
+    clock_gettime(CLOCK_REALTIME, &order_stop);
+    
+    // find max avg cystomer service time
+    //order_stop.tv_sec= order_stop.tv_sec - order_start.tv_sec;
+    double d_time= (order_stop.tv_sec/ - order_start.tv_sec)/60;
+     printf("ORDER STOP %ld \n",order_stop.tv_sec);
+    rc = pthread_mutex_lock(&mutex_screen);
+    printf("Order %d delivred sussefully in %ld minutes \n\n",oid,d_time); 
+    rc = pthread_mutex_unlock(&mutex_screen);
+    
+    total_customer_service_time= total_customer_service_time + d_time;
+    //printf("total %f", total_customer_service_time);
+    if (d_time> max_customer_service_time)
+    { max_customer_service_time=d_time;
+    }
+    // find max avg cold time 
+    cold_time= order_stop.tv_sec - time_baked.tv_sec;
+    cold_time /=60;
+    printf ("cold_time %f ",cold_time);
+    total_cold_time=  total_cold_time+ cold_time;
+    printf("total COLD  %f", total_cold_time);
+    if ( max_cold_time < cold_time){
+    	 max_cold_time = cold_time;
+    }  
+    
+    //// the time the delivery guy  needs to return from the adrress
+    sleep(del_time);
+    rc = pthread_mutex_lock(&mutex_deliverers);
+   
+     
+    // free ton poro + unlock
+    N_deliver++;
+    rc = pthread_mutex_unlock(&mutex_deliverers);
+    rc = pthread_cond_signal(&cond_deliverers);
+    
+    // exit 
+    pthread_exit(NULL);
+
+  
+}
+
+int main(int argc, char *argv[]) {
+
+	if (argc != 3) {
+		printf("Please enter only two arguments.\n\n");
+		exit(-1);
+	}
+
+	double next_order;
+	N_cust = atoi(argv[1]);
+	seed = atoi(argv[2]);
+
+	int customer_id[N_cust];
+	for (int i = 0; i < N_cust; i++) {
+		customer_id[i] = i + 1;
+        }
+	
+	if(N_cust <0) {
+        printf("Customer Negative number.\n\n");
+        exit(-1);
+        }
+
+	int rc;
+	pthread_t threads[N_cust];
+	//pthread_mutex_init(&lock, NULL);
+	//pthread_cond_init(&cond, NULL);	
+
+
+	//initialize order threads
+
+         pthread_t *thread;
+         thread = malloc(N_cust*sizeof(pthread_t));
+         if(thread==NULL){
+            printf("Error in memory.\n\n");
+            exit(-1);
+         }
+
+	for (int i = 0; i < N_cust; i++)
+        {
+		
+		if (i==0){
+		printf("Main:Δημιουργία νηματος για πελατη  %d\n\n", i+1);
+		rc = pthread_create(&threads[i], NULL, &order, &customer_id[i]);
+		
+		}else{
+		printf("Main:Δημιουργία νηματος για πελατη  %d\n\n", i+1);
+		int next_order = rand_r(&seed)%T_orderhigh+T_orderlow;
+		sleep(next_order);
+		printf ("SLEEP CREATE %d\n\n",next_order);
+		rc = pthread_create(&threads[i], NULL, &order, &customer_id[i]);
+
+		}
+	}
+	
+	
+	// joining threads
+	void *stat;
+	for (int i = 0; i < N_cust; i++) {
+		pthread_join(threads[i], &stat);
+	}
+	
+    
+    // messages
+    rc = pthread_mutex_lock(&mutex_screen);
+	printf("\nO The pizzaria had made %d money today and had %d successfull orders and %d fail orders.\n\n", total_money, success_order,fail_order);
+	avg_wait = total_wait_time/N_cust;
+	printf("\n The max wait time was %f and the average was %f.\n\n",max_wait_time,total_wait_time/N_cust);
+	avg_service=total_customer_service_time/success_order;
+	printf("\n The max service time was %f and the average was %f.\n\n",max_customer_service_time,avg_wait);
+	avg_cold=total_cold_time/success_order;
+	printf("\n The max cold time was %f and the average was %f.\n\n",max_cold_time,avg_cold);
+	rc = pthread_mutex_unlock(&mutex_screen);
+	
+	free(thread);// FREE memory
+	// destroy cond, mutex
+	pthread_mutex_destroy(&mutex_tel);
+    pthread_cond_destroy(&cond_tel);
+    pthread_mutex_destroy(&mutex_cooks);
+    pthread_cond_destroy(&cond_cooks);
+    pthread_mutex_destroy(&mutex_ovens);
+    pthread_cond_destroy(&cond_ovens);
+    pthread_mutex_destroy(&mutex_deliverers);
+    pthread_cond_destroy(&cond_deliverers);
+    pthread_mutex_destroy(&mutex_pack);
+    pthread_cond_destroy(&cond_pack);
+    pthread_mutex_destroy(&mutex_screen);
+   
+
+    return 0;
+}
+
